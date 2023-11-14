@@ -43,8 +43,8 @@ const api = {
 
   getUserToken: async (credentials,body) => {
     const data = await makeRequest(credentials.baseURL + '/getUserToken', 'POST', {
-      application: body.application,
-      timeZone: body.timezone,
+      application: body.application ?? "Web API",
+      timeZone: body.timezone ?? "GMT Standard Time",
       username: credentials.username,
       password: credentials.password,
     });
@@ -52,17 +52,17 @@ const api = {
     _userToken = data.userToken;
   },
 
-  browseTags: async (credentials, continuation) => {
+  browseTags: async (credentials, body, continuation) => {
     const data = await makeRequest(credentials.baseURL + '/browseTags', 'POST', {
       userToken: _userToken,
-      deep: true,
-      search: '{Diagnostics}',
+      deep: body.deep ?? true,
+      search: body.search ?? '{Diagnostics}',
     });
     console.log('browseTags', data);
     _tags = data.tags;
   },
 
-  getCurrentValues: async (credentials) => {
+  getCurrentValues: async (credentials , body) => {
     if (_tags.length === 0) {
       console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
@@ -70,12 +70,12 @@ const api = {
 
     const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
       userToken: _userToken,
-      tags: _tags,
+      tags: body.tags ?? _tags,
     });
     console.log('getCurrentValues', data);
   },
 
-  getRawData: async (credentials, continuation) => {
+  getRawData: async (credentials, body, continuation) => {
     if (_tags.length === 0) {
       console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
@@ -84,11 +84,11 @@ const api = {
     try {
       const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
         userToken: _userToken,
-        tags: _tags,
-        startTime: 'Now - 24 Hours',
-        endTime: 'Now',
-        maxSize: 10000,
-        continuation: continuation || null,
+        tags: body.tags ?? _tags,
+        startTime: body.startTime ?? 'Now - 24 Hours',
+        endTime: body.endTime ?? 'Now',
+        maxSize: body.maxSize ?? 10000,
+        continuation: continuation ?? null,
       });
       console.log('getRawData', data);
 
@@ -103,7 +103,7 @@ const api = {
     }
   },
 
-  getProcessedData: async (credentials, continuation) => {
+  getProcessedData: async (credentials, body, continuation) => {
     if (_tags.length === 0) {
       console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
@@ -112,13 +112,13 @@ const api = {
     try {
       const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
         userToken: _userToken,
-        tags: _tags,
-        startTime: 'Now - 1 Day',
-        endTime: 'Now',
-        aggregateName: 'TimeAverage2',
-        aggregateInterval: '1 Hour',
-        maxSize: 10000,
-        continuation: continuation || null,
+        tags: body.tags ?? _tags,
+        startTime: body.startTime ?? 'Now - 24 Hours',
+        endTime: body.endTime ?? 'Now',
+        aggregateName: body.aggregateName ?? 'TimeAverage2',
+        aggregateInterval: body.aggregateInterval ?? '1 Hour',
+        maxSize: body.maxSize ?? 10000,
+        continuation: continuation ?? null,
       });
       console.log('getProcessedData', data);
 
@@ -144,7 +144,7 @@ const api = {
   browseNodes: async (credentials, path) => {
     const data = await makeRequest(credentials.baseURL + '/browseNodes', 'POST', {
       userToken: _userToken,
-      path: path || '',
+      path: path ?? '',
     });
     console.log('browseNodes', data);
 
@@ -171,10 +171,10 @@ const api = {
     console.log('getQualities', data);
   },
 
-  getTagProperties: async (credentials) => {
+  getTagProperties: async (credentials,body) => {
     const data = await makeRequest(credentials.baseURL + '/getTagProperties', 'POST', {
       userToken: _userToken,
-      tags: _tags,
+      tags: body.tags ?? _tags,
     });
     console.log('getTagProperties', data);
   },
@@ -187,8 +187,8 @@ const api = {
 
     const data = await makeRequest(credentials.baseURL + '/getLiveDataToken', 'POST', {
       userToken: _userToken,
-      tags: _tags,
-      mode: 'AllValues',
+      tags: body.tags ?? _tags,
+      mode: body.mode ?? 'AllValues',
       includeQuality: true,
     });
     console.log('getLiveDataToken', data);

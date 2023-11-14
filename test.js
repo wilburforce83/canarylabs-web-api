@@ -19,6 +19,10 @@ let result = canary.getUserToken(credentials, userTokenBody);
 
 console.log(result);
 
+let livedata = canary.getLiveDataToken(credentials);
+
+console.log(livedata);
+
 
 
 
