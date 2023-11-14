@@ -1,19 +1,15 @@
-// index.js
-
-const axios = require('axios');
-const https = require('https');
+const axios = require("axios");
+const https = require("https");
 
 // Ingoring SSL failures - ONLY USE ON READONLY NON_SENSITIVE DATA
 
 const agent = new https.Agent({
-  rejectUnauthorized: false
+  rejectUnauthorized: false,
 });
 
 let _userToken = null;
 let _tags = [];
 let _liveDataToken = null;
-
-
 
 const makeRequest = async (url, method, data) => {
   try {
@@ -22,13 +18,13 @@ const makeRequest = async (url, method, data) => {
       method,
       data: JSON.stringify(data),
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       httpsAgent: agent,
     });
     return response.data;
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error("Error:", error.message);
     throw error;
   }
 };
@@ -37,181 +33,270 @@ const makeRequest = async (url, method, data) => {
 
 const api = {
   getTimeZones: async (credentials) => {
-    const data = await makeRequest(credentials.baseURL + '/getTimeZones', 'POST');
-    console.log('getTimeZones', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/getTimeZones",
+      "POST"
+    );
+    //console.log('getTimeZones', data);
+    return data;
   },
 
-  getUserToken: async (credentials,body) => {
-    const data = await makeRequest(credentials.baseURL + '/getUserToken', 'POST', {
-      application: body.application ?? "Web API",
-      timeZone: body.timezone ?? "GMT Standard Time",
-      username: credentials.username,
-      password: credentials.password,
-    });
-    console.log('getUserToken', data);
+  getUserToken: async (credentials, body) => {
+    body = body !== undefined ? body : { blank: "value" };
+    const data = await makeRequest(
+      credentials.baseURL + "/getUserToken",
+      "POST",
+      {
+        application:
+          body.application !== undefined ? body.application : "Web API",
+        timeZone:
+          body.timezone !== undefined ? body.timezone : "GMT Standard Time",
+        username: credentials.username,
+        password: credentials.password,
+      }
+    );
+    //console.log('getUserToken', data);
     _userToken = data.userToken;
+    return data;
   },
 
   browseTags: async (credentials, body, continuation) => {
-    const data = await makeRequest(credentials.baseURL + '/browseTags', 'POST', {
-      userToken: _userToken,
-      deep: body.deep ?? true,
-      search: body.search ?? '{Diagnostics}',
-    });
-    console.log('browseTags', data);
+    body = body !== undefined ? body : { blank: "value" };
+    //console.log(body);
+    const data = await makeRequest(
+      credentials.baseURL + "/browseTags",
+      "POST",
+      {
+        userToken: _userToken,
+        deep: body.deep !== undefined ? body.deep : true,
+        search: body.search !== undefined ? body.search : "{Diagnostics}",
+      }
+    );
+    //console.log('browseTags', data);
     _tags = data.tags;
+    return data;
   },
 
-  getCurrentValues: async (credentials , body) => {
+  getCurrentValues: async (credentials, body) => {
+    body = body !== undefined ? body : { blank: "value" };
     if (_tags.length === 0) {
-      console.log('Call "BrowseTags" first to build an array of tags used to get data.');
+      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
     }
 
-    const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
-      userToken: _userToken,
-      tags: body.tags ?? _tags,
-    });
-    console.log('getCurrentValues', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/getTagData2",
+      "POST",
+      {
+        userToken: _userToken,
+        tags: body.tags !== undefined ? body.tags : _tags,
+      }
+    );
+    //console.log('getCurrentValues', data);
+    return data;
   },
 
   getRawData: async (credentials, body, continuation) => {
+    body = body !== undefined ? body : { blank: "value" };
     if (_tags.length === 0) {
-      console.log('Call "BrowseTags" first to build an array of tags used to get data.');
+      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
     }
 
     try {
-      const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
-        userToken: _userToken,
-        tags: body.tags ?? _tags,
-        startTime: body.startTime ?? 'Now - 24 Hours',
-        endTime: body.endTime ?? 'Now',
-        maxSize: body.maxSize ?? 10000,
-        continuation: continuation ?? null,
-      });
-      console.log('getRawData', data);
+      const data = await makeRequest(
+        credentials.baseURL + "/getTagData2",
+        "POST",
+        {
+          userToken: _userToken,
+          tags: body.tags !== undefined ? body.tags : _tags,
+          startTime:
+            body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
+          endTime: body.endTime !== undefined ? body.endTime : "Now",
+          maxSize: body.maxSize !== undefined ? body.maxSize : 10000,
+          continuation: continuation !== undefined ? continuation : null,
+        }
+      );
+      //console.log('getRawData', data);
 
       if (data.continuation !== null) {
-        console.log('CONTINUATION: getRawData', data.continuation);
-        await apiMethods.getRawData(credentials, data.continuation);
+        //console.log('CONTINUATION: getRawData', data.continuation);
+        // do an array push maybe? need to understand how this works
+        await api.getRawData(credentials, data.continuation);
       } else {
-        console.log('FINISHED: getRawData');
+        //console.log('FINISHED: getRawData');
+        return data;
       }
     } catch (error) {
-      console.log('error', error);
+      //console.log('error', error);
     }
   },
 
   getProcessedData: async (credentials, body, continuation) => {
+    body = body !== undefined ? body : { blank: "value" };
     if (_tags.length === 0) {
-      console.log('Call "BrowseTags" first to build an array of tags used to get data.');
+      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
     }
 
     try {
-      const data = await makeRequest(credentials.baseURL + '/getTagData2', 'POST', {
-        userToken: _userToken,
-        tags: body.tags ?? _tags,
-        startTime: body.startTime ?? 'Now - 24 Hours',
-        endTime: body.endTime ?? 'Now',
-        aggregateName: body.aggregateName ?? 'TimeAverage2',
-        aggregateInterval: body.aggregateInterval ?? '1 Hour',
-        maxSize: body.maxSize ?? 10000,
-        continuation: continuation ?? null,
-      });
-      console.log('getProcessedData', data);
+      const data = await makeRequest(
+        credentials.baseURL + "/getTagData2",
+        "POST",
+        {
+          userToken: _userToken,
+          tags: body.tags !== undefined ? body.tags : _tags,
+          startTime:
+            body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
+          endTime: body.endTime !== undefined ? body.endTime : "Now",
+          aggregateName:
+            body.aggregateName !== undefined
+              ? body.aggregateName
+              : "TimeAverage2",
+          aggregateInterval:
+            body.aggregateInterval !== undefined
+              ? body.aggregateInterval
+              : "1 Hour",
+          maxSize: body.maxSize !== undefined ? body.maxSize : 10000,
+          continuation: continuation !== undefined ? continuation : null,
+        }
+      );
+      //console.log('getProcessedData', data);
 
       if (data.continuation !== null) {
-        console.log('CONTINUATION: getProcessedData', data.continuation);
-        await apiMethods.getProcessedData(credentials, data.continuation);
+        //console.log('CONTINUATION: getProcessedData', data.continuation);
+        await api.getProcessedData(credentials, data.continuation);
       } else {
-        console.log('FINISHED: getProcessedData');
+        //console.log('FINISHED: getProcessedData');
+        return data;
       }
     } catch (error) {
-      console.log('error', error);
+      //console.log('error', error);
     }
   },
 
   revokeUserToken: async (credentials) => {
-    const data = await makeRequest(credentials.baseURL + '/revokeUserToken', 'POST', {
-      userToken: _userToken,
-    });
-    console.log('revokeUserToken', data);
+    body = body !== undefined ? body : { blank: "value" };
+    const data = await makeRequest(
+      credentials.baseURL + "/revokeUserToken",
+      "POST",
+      {
+        userToken: _userToken,
+      }
+    );
+    //console.log('revokeUserToken', data);
     _userToken = null;
+    return data;
   },
 
   browseNodes: async (credentials, path) => {
-    const data = await makeRequest(credentials.baseURL + '/browseNodes', 'POST', {
-      userToken: _userToken,
-      path: path ?? '',
-    });
-    console.log('browseNodes', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/browseNodes",
+      "POST",
+      {
+        userToken: _userToken,
+        path: path !== undefined ? path : "",
+      }
+    );
+    //console.log('browseNodes', data);
 
     const nodes = data.nodes;
     const keys = Object.keys(nodes);
     if (keys.length > 0) {
       const node = nodes[keys[0]];
-      if (node.hasNodes) await apiMethods.browseNodes(credentials, node.fullPath);
+      if (node.hasNodes) await api.browseNodes(credentials, node.fullPath);
+      return data;
     }
+    return data;
   },
 
   getAggregates: async (credentials) => {
-    const data = await makeRequest(credentials.baseURL + '/getAggregates', 'POST', {
-      userToken: _userToken,
-    });
-    console.log('getAggregates', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/getAggregates",
+      "POST",
+      {
+        userToken: _userToken,
+      }
+    );
+    //console.log('getAggregates', data);
+    return data;
   },
 
   getQualities: async (credentials, qualities) => {
-    const data = await makeRequest(credentials.baseURL + '/getQualities', 'POST', {
-      userToken: _userToken,
-      qualities: qualities !== undefined ? qualities : [192, '193', 32768],
-    });
-    console.log('getQualities', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/getQualities",
+      "POST",
+      {
+        userToken: _userToken,
+        qualities: qualities !== undefined ? qualities : [192, "193", 32768],
+      }
+    );
+    //console.log('getQualities', data);
+    return data;
   },
 
-  getTagProperties: async (credentials,body) => {
-    const data = await makeRequest(credentials.baseURL + '/getTagProperties', 'POST', {
-      userToken: _userToken,
-      tags: body.tags ?? _tags,
-    });
-    console.log('getTagProperties', data);
+  getTagProperties: async (credentials, body) => {
+    body = body !== undefined ? body : { blank: "value" };
+    const data = await makeRequest(
+      credentials.baseURL + "/getTagProperties",
+      "POST",
+      {
+        userToken: _userToken,
+        tags: body.tags !== undefined ? body.tags : _tags,
+      }
+    );
+    //console.log('getTagProperties', data);
+    return data;
   },
 
-  getLiveDataToken: async (credentials) => {
+  getLiveDataToken: async (credentials, body) => {
+    body = body !== undefined ? body : { blank: "value" };
     if (_tags.length === 0) {
-      console.log('Call "BrowseTags" first to build an array of tags used to get data.');
+      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
       return;
     }
 
-    const data = await makeRequest(credentials.baseURL + '/getLiveDataToken', 'POST', {
-      userToken: _userToken,
-      tags: body.tags ?? _tags,
-      mode: body.mode ?? 'AllValues',
-      includeQuality: true,
-    });
-    console.log('getLiveDataToken', data);
-
+    const data = await makeRequest(
+      credentials.baseURL + "/getLiveDataToken",
+      "POST",
+      {
+        userToken: _userToken,
+        tags: body.tags !== undefined ? body.tags : _tags,
+        mode: body.mode !== undefined ? body.mode : "AllValues",
+        includeQuality: true,
+      }
+    );
+    //console.log('getLiveDataToken', data);
     _liveDataToken = data.liveDataToken;
+    return data;
   },
 
   getLiveData: async (credentials, continuation) => {
-    const data = await makeRequest(credentials.baseURL + '/getLiveData', 'POST', {
-      userToken: _userToken,
-      liveDataToken: _liveDataToken,
-      continuation: continuation || null,
-    });
-    console.log('getLiveData', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/getLiveData",
+      "POST",
+      {
+        userToken: _userToken,
+        liveDataToken: _liveDataToken,
+        continuation: continuation !== undefined ? continuation : null,
+      }
+    );
+    //console.log('getLiveData', data);
+    return data;
   },
 
   revokeLiveDataToken: async (credentials) => {
-    const data = await makeRequest(credentials.baseURL + '/revokeLiveDataToken', 'POST', {
-      userToken: _userToken,
-      liveDataToken: _liveDataToken,
-    });
-    console.log('revokeLiveDataToken', data);
+    const data = await makeRequest(
+      credentials.baseURL + "/revokeLiveDataToken",
+      "POST",
+      {
+        userToken: _userToken,
+        liveDataToken: _liveDataToken,
+      }
+    );
+    //console.log('revokeLiveDataToken', data);
     _liveDataToken = null;
+    return data;
   },
 };
 
