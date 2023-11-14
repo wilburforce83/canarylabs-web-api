@@ -11,8 +11,6 @@ const credentials = {
     "https://yourdomain.canarylabs.online:55236/api/v2",
 };
 
-// Now you can use credentials.username, credentials.password, and credentials.baseURL in your application
-
 let userTokenBody = {
   application: "Web API",
   timezone: "Eastern Standard Time",
