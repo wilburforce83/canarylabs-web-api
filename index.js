@@ -300,7 +300,7 @@ const api = {
   },
 
   storeLatestValues: async (credentials) => {
-    let liveValues = await canary.getCurrentValues(credentials);
+    let liveValues = await getCurrentValues(credentials);
   
     // Define an object to store the variables
     let result = {};
