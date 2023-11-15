@@ -69,7 +69,7 @@ const api = {
       {
         userToken: _userToken,
         deep: body.deep !== undefined ? body.deep : true,
-        search: body.search !== undefined ? body.search : "{Diagnostics}",
+        path: body.path !== undefined ? body.path : "",
       }
     );
     //console.log('browseTags', data);

@@ -18,10 +18,22 @@ let userTokenBody = {
 
 // Example usage:
 
+
 (async () => {
   try {
     let result = await canary.getUserToken(credentials, userTokenBody);
-    console.log("User Token : " + result.userToken);
+    console.log('getusertoken',result);
+
+    // Make sure browseTags returns a promise
+    let browseTagsResult = await canary.browseTags(credentials);
+    console.log('Browse tags',browseTagsResult);
+    // Check if browseTags was successful before calling getLiveDataToken
+    if (browseTagsResult) {
+      let liveDataResult = await canary.getLiveDataToken(credentials);
+      console.log('Live Data Result',liveDataResult);
+    } else {
+      console.log("Error in browseTags. Cannot proceed to getLiveDataToken.");
+    }
   } catch (error) {
     console.error("Error:", error);
   }
