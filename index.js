@@ -300,7 +300,7 @@ const api = {
   },
 
   storeLatestValues: async (credentials) => {
-    let liveValues = await getCurrentValues(credentials);
+    let liveValues = await api.getCurrentValues(credentials);
   
     // Define an object to store the variables
     let result = {};
@@ -314,7 +314,7 @@ const api = {
     }
   
     return result;
-  }
+  },
 
 
 
