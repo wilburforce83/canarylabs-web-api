@@ -298,6 +298,33 @@ const api = {
     _liveDataToken = null;
     return data;
   },
+
+  storeLatestValues: async (credentials) => {
+    let liveValues = await canary.getCurrentValues(credentials);
+  
+    // Define an object to store the variables
+    let result = {};
+  
+    // Iterate through each key in liveValues.data
+    for (let key in liveValues.data) {
+        if (liveValues.data.hasOwnProperty(key) && liveValues.data[key][0]) {
+            // Allocate automatic variables with the key name
+            result[key] = liveValues.data[key][0].v.toFixed(2);
+        }
+    }
+  
+    return result;
+  }
+
+
+
+
 };
+
+
+
+
+
+
 
 module.exports = api;

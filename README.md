@@ -40,6 +40,43 @@ let userTokenBody = {
 
 ```
 
+### Additional useful functions
+
+Automatically store all tag values in an object where the key:value = "Tag_name123" : latest value for simple recall
+
+Usage:
+
+```javascript
+let tagValues = await canary.storeLatestValues(credentials);
+```
+
+Result:
+
+```javascript
+{
+    Company: {
+        Site: {
+            PlantItem1: {
+                sensor1: /* Corresponding value for "Company.Site.PlantItem1.sensor1" */,
+            },
+            Flow: {
+                FT1: /* Corresponding value for "Company.Site.Flow.FT1" */,
+            },
+            PlantItem2: {
+                Power: /* Corresponding value for "Company.Site.PlantItem2.Power" */,
+            },
+            Pressure: {
+                PT1: /* Corresponding value for "Company.Site.Pressure.PT1" */,
+                PT2: /* Corresponding value for "Company.Site.Pressure.PT2" */,
+                PT3: /* Corresponding value for "Company.Site.Pressure.PT3" */,
+                PT4: /* Corresponding value for "Company.Site.Pressure.PT4" */,
+            },
+        },
+    },
+}
+```
+This allows you to use the Axiom tag reference to directly call a live value without having to process it manually fro the API response.
+
 ### Documentation of the API
 
 https://helpcenter.canarylabs.com/t/y4hvlzq/web-read-api-postman-example-version-23
