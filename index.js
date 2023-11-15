@@ -309,7 +309,7 @@ const api = {
     for (let key in liveValues.data) {
         if (liveValues.data.hasOwnProperty(key) && liveValues.data[key][0]) {
             // Allocate automatic variables with the key name
-            result[key] = liveValues.data[key][0].v.toFixed(2);
+            result[key] = liveValues.data[key][0].v;
         }
     }
   
