@@ -113,7 +113,7 @@ const api = {
           startTime:
             body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
           endTime: body.endTime !== undefined ? body.endTime : "Now",
-          maxSize: body.maxSize !== undefined ? body.maxSize : 10000,
+          maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
           continuation: continuation !== undefined ? continuation : null,
         }
       );
@@ -157,7 +157,7 @@ const api = {
             body.aggregateInterval !== undefined
               ? body.aggregateInterval
               : "1 Hour",
-          maxSize: body.maxSize !== undefined ? body.maxSize : 10000,
+          maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
           continuation: continuation !== undefined ? continuation : null,
         }
       );
