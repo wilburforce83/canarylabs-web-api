@@ -170,8 +170,9 @@ const api = {
         //console.log('FINISHED: getProcessedData');
         if (data.data)
 
-        data = processTags(data, body.tags);
-        return data;
+        var FixedData = processTags(data, body.tags);
+        console.group("processed tags");
+        return FixedData;
       }
     } catch (error) {
       //console.log('error', error);
@@ -325,15 +326,18 @@ const api = {
 };
 
 function processTags(data, tags) {
+ console.log(data.data);
   tags.forEach(tag => {
-      if (data[tag]) {
-          data[tag].forEach(item => {
+      if (data.data[tag]) {
+          data.data[tag].forEach(item => {
+            console.log("item",item);
               if (item.v === null) {
                   item.v = 0;
               }
           });
       }
   });
+  return data;
 }
 
 
