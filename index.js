@@ -168,6 +168,9 @@ const api = {
         await api.getProcessedData(credentials, data.continuation);
       } else {
         //console.log('FINISHED: getProcessedData');
+        if (data.data)
+
+        data = processTags(data, body.tags);
         return data;
       }
     } catch (error) {
@@ -320,6 +323,18 @@ const api = {
 
 
 };
+
+function processTags(data, tags) {
+  tags.forEach(tag => {
+      if (data[tag]) {
+          data[tag].forEach(item => {
+              if (item.v === null) {
+                  item.v = 0;
+              }
+          });
+      }
+  });
+}
 
 
 
