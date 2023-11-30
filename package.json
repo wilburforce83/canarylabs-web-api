@@ -6,7 +6,7 @@
   },
   "name": "canarylabs-web-api",
   "description": "Unofficial NodeJS package for the Canary Axiom Web API",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

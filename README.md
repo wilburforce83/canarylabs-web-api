@@ -42,7 +42,9 @@ let userTokenBody = {
 
 ### Additional useful functions
 
-Automatically store all tag values in an object where the key:value = "Tag_name123" : latest value for simple recall
+#### Value processing
+
+Automatically store all tag values in an object where the key:value = "Full.Tag_name123" : latest value for simple recall, I have found this very useful.
 
 Usage:
 
@@ -53,29 +55,36 @@ let tagValues = await canary.storeLatestValues(credentials);
 Result:
 
 ```javascript
-{
-    Company: {
-        Site: {
-            PlantItem1: {
-                sensor1: /* Corresponding value for "Company.Site.PlantItem1.sensor1" */,
-            },
-            Flow: {
-                FT1: /* Corresponding value for "Company.Site.Flow.FT1" */,
-            },
-            PlantItem2: {
-                Power: /* Corresponding value for "Company.Site.PlantItem2.Power" */,
-            },
-            Pressure: {
-                PT1: /* Corresponding value for "Company.Site.Pressure.PT1" */,
-                PT2: /* Corresponding value for "Company.Site.Pressure.PT2" */,
-                PT3: /* Corresponding value for "Company.Site.Pressure.PT3" */,
-                PT4: /* Corresponding value for "Company.Site.Pressure.PT4" */,
-            },
-        },
-    },
+
+// example
+var pressureTag1 = tagValues["Company.Site.Pressure.pressure1"]
+console.log(pressureTag1+" bar")
+
+// result 1.57 bar
+```
+
+This allows you to use the Axiom tag reference to directly call a live value without having to process it manually fro the API response.
+
+#### Removal of null
+
+The Canary API returns `null` on any processed data request i.e an average or delta request, if that tag has been sitting at 0 for the whole request period. This is also an issue with the API usage on the Axiom dashboard system, where averages and deltas etc return an error instead of 0 in value boxes. The main issue here is that will break subsquent calculations (as it does with the historian calcs), this means adding in your own error handling, so I have added this into the API with a simple helper function that will run on the returned data and sanitize `null` to `0`:
+
+```javascript
+function processTags(data, tags) {
+ console.log(data.data);
+  tags.forEach(tag => {
+      if (data.data[tag]) {
+          data.data[tag].forEach(item => {
+            console.log("item",item);
+              if (item.v === null) {
+                  item.v = 0;
+              }
+          });
+      }
+  });
+  return data;
 }
 ```
-This allows you to use the Axiom tag reference to directly call a live value without having to process it manually fro the API response.
 
 ### Documentation of the API
 

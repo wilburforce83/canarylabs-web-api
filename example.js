@@ -32,12 +32,12 @@ let userTokenBody = {
       console.log("Live Data Result", liveDataResult);
       if (liveDataResult) {
         let liveValues = await canary.getCurrentValues(credentials, {
-          tags: ["GreenCreate.Kent.Flow.FT1200_PV"],
+          tags: ["Company.Site.Flow.FT1200_PV"],
         });
-        const dataArray = liveValues.data["GreenCreate.Kent.Flow.FT1200_PV"];
+        const dataArray = liveValues.data["Company.Site.Flow.FT1200_PV"];
         const firstObject = dataArray[0].v;
 
-        console.log('Kent Biogas Production:',firstObject);
+        console.log('Flow Mater 1200:',firstObject);
       }
     } else {
       console.log("Error in browseTags. Cannot proceed to getLiveDataToken.");
