@@ -325,6 +325,9 @@ const api = {
 
 };
 
+
+// HELPER FUNCTIONS
+
 function processTags(data, tags) {
  console.log(data.data);
   tags.forEach(tag => {
@@ -338,6 +341,44 @@ function processTags(data, tags) {
       }
   });
   return data;
+}
+
+function convertTimeStringToHours(inputString) {
+  // Regular expression to extract number and unit from the input string
+  const regex = /^(\d+)\s+(\w+)$/;
+
+  // Use regex to match the input string
+  const match = inputString.match(regex);
+
+  if (!match) {
+    // If the input string does not match the expected format
+    console.error("Invalid input format. Please use the format: '10 seconds', '12 hours', '17 minutes', '10 days', etc.");
+    return null;
+  }
+
+  // Extract number and unit from the match
+  const number = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+
+  // Define conversion factors
+  const conversionFactors = {
+    second: 1 / 3600,
+    minute: 1 / 60,
+    hour: 1,
+    day: 24,
+    week: 24 * 7,
+  };
+
+  // Check if the unit is a valid key in the conversionFactors object
+  if (!(unit in conversionFactors)) {
+    console.error("Invalid time unit. Please use 'second(s)', 'minute(s)', 'hour(s)', 'day(s)', or 'week(s)'.");
+    return null;
+  }
+
+  // Calculate the result in hours
+  const resultInHours = number * conversionFactors[unit];
+
+  return resultInHours;
 }
 
 
