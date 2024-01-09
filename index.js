@@ -170,8 +170,8 @@ const api = {
         //console.log('FINISHED: getProcessedData');
         if (data.data)
 
-        var FixedData = processTags(data, body.tags);
-        console.group("processed tags");
+          var FixedData = processTags(data, body.tags);
+        // console.group("processed tags");
         return FixedData;
       }
     } catch (error) {
@@ -305,19 +305,53 @@ const api = {
 
   storeLatestValues: async (credentials) => {
     let liveValues = await api.getCurrentValues(credentials);
-  
+
     // Define an object to store the variables
     let result = {};
-  
+
     // Iterate through each key in liveValues.data
     for (let key in liveValues.data) {
-        if (liveValues.data.hasOwnProperty(key) && liveValues.data[key][0]) {
-            // Allocate automatic variables with the key name
-            result[key] = liveValues.data[key][0].v;
-        }
+      if (liveValues.data.hasOwnProperty(key) && liveValues.data[key][0]) {
+        // Allocate automatic variables with the key name
+        result[key] = liveValues.data[key][0].v;
+      }
     }
-  
+
     return result;
+  },
+
+  extractValues: (data) => {
+    // Check if the input data is an array
+    if (!Array.isArray(data)) {
+      throw new Error("Input data must be an array");
+    }
+
+    // Use the map function to create a new array with only the "v" values
+    const valuesArray = data.map((item) => item.v);
+
+    return valuesArray;
+  },
+
+  softTotalizer: async (credentials, body, continuation) => {
+
+    let rawData = await api.getProcessedData(credentials, body);
+    // console.log(rawData.data[body.tags[0]]);
+    let dataValues = api.extractValues(rawData.data[body.tags[0]])
+    // console.log(dataValues);
+    // Sum of array
+    var sum = 0;
+
+    // Iterate through the array and add each element to the sum
+    for (var i = 0; i < dataValues.length; i++) {
+      sum += dataValues[i];
+    }
+    console.log(body.aggregateInterval);
+    var multiplier = convertTimeStringToHours(body.aggregateInterval)
+    // console.log(sum, multiplier)
+
+    let totaliser = Math.floor(sum * multiplier);
+
+    return totaliser;
   },
 
 
@@ -329,16 +363,16 @@ const api = {
 // HELPER FUNCTIONS
 
 function processTags(data, tags) {
- console.log(data.data);
+  console.log(data.data);
   tags.forEach(tag => {
-      if (data.data[tag]) {
-          data.data[tag].forEach(item => {
-            console.log("item",item);
-              if (item.v === null) {
-                  item.v = 0;
-              }
-          });
-      }
+    if (data.data[tag]) {
+      data.data[tag].forEach(item => {
+        console.log("item", item);
+        if (item.v === null) {
+          item.v = 0;
+        }
+      });
+    }
   });
   return data;
 }
@@ -367,6 +401,11 @@ function convertTimeStringToHours(inputString) {
     hour: 1,
     day: 24,
     week: 24 * 7,
+    seconds: 1 / 3600,
+    minutes: 1 / 60,
+    hours: 1,
+    days: 24,
+    weeks: 24 * 7,
   };
 
   // Check if the unit is a valid key in the conversionFactors object

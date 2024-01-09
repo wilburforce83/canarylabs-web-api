@@ -86,6 +86,30 @@ function processTags(data, tags) {
 }
 ```
 
+#### Software Totalizer
+
+If your flow sensor does not have a pulsed output totaliser you can use this function to return a totalizer figure for a given period. the body key of `aggregateInterval` will determine the accuracy of the total, and should be used carefully, an interval of 1 second will be very accruate, but over a period of the more than a few hours will return too many values. Whereas an interval of 1 hour will return fewer values, but will be less accurate as a total.
+
+```javascript
+// Dates should be mm-dd-yyyy, seconds, minutes, hours, days, weeks are also acceptable semantic start and end times.
+
+       let totalizer = await canary.softTotalizer(credentials, {
+
+        "userToken": "{{UserToken}}",
+        "tags": ["Company.Site.Flow.FT1731_PV"],
+        "startTime": "now - 2 hour",
+        "endTime": "now",
+        "maxSize": 10000000,
+        "aggregateName": "TimeAverage2",
+        "aggregateInterval": "30 seconds"
+
+    });
+
+    console.log("response; ",totalizer);
+
+  };
+```
+
 ### Documentation of the API
 
 https://helpcenter.canarylabs.com/t/y4hvlzq/web-read-api-postman-example-version-23
