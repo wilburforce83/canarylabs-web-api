@@ -38,7 +38,7 @@ let userTokenBody = {
        let pondWater = await canary.softTotalizer(credentials, {
 
         "userToken": "{{UserToken}}",
-        "tags": ["GreenCreate.Kent.Flow.FT1731_PV"],
+        "tags": ["Company.Site.Flow.FT1731_PV"],
         "startTime": "now - 2 hour",
         "endTime": "now",
         "maxSize": 10000000,
