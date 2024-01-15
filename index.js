@@ -345,7 +345,7 @@ const api = {
     for (var i = 0; i < dataValues.length; i++) {
       sum += dataValues[i];
     }
-    console.log(body.aggregateInterval);
+   // console.log(body.aggregateInterval);
     var multiplier = convertTimeStringToHours(body.aggregateInterval)
     // console.log(sum, multiplier)
 
