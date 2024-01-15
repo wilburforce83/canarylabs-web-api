@@ -367,7 +367,7 @@ function processTags(data, tags) {
   tags.forEach(tag => {
     if (data.data[tag]) {
       data.data[tag].forEach(item => {
-        console.log("item", item);
+       // console.log("item", item);
         if (item.v === null) {
           item.v = 0;
         }
