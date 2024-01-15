@@ -363,7 +363,7 @@ const api = {
 // HELPER FUNCTIONS
 
 function processTags(data, tags) {
-  console.log(data.data);
+ // console.log(data.data);
   tags.forEach(tag => {
     if (data.data[tag]) {
       data.data[tag].forEach(item => {
