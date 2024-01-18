@@ -110,6 +110,30 @@ If your flow sensor does not have a pulsed output totaliser you can use this fun
   };
 ```
 
+#### Software runHours
+
+For calculating the run hours of equipment based on a key production parameter, such as flowrate, pressure, power, frequency etc.
+
+Identical to the soft totalizer with an additional paratmeter of `threshold` which is there to account for noise i.e. a flow meter might have a threshold of "1" to avoid reading of <1 from triggering the run count:
+
+```javascript
+let threshold = 1 // where the threshold is the lowest value that the parameter might read when not running
+
+let runHours = await canary.softRunHours(credentials, {
+
+          "userToken": "{{UserToken}}",
+          "tags": ["company.site.Flow.FT2900_PV"],
+          "startTime": "12-01-2023",
+          "endTime": "now",
+          "maxSize": 10000000,
+          "aggregateName": "TimeAverage2",
+          "aggregateInterval": "10 seconds"
+
+        }, threshold);
+
+        console.log("response; ", runHours);
+```
+
 ### Documentation of the API
 
 https://helpcenter.canarylabs.com/t/y4hvlzq/web-read-api-postman-example-version-23
