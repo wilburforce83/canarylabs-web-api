@@ -354,6 +354,31 @@ const api = {
     return totaliser;
   },
 
+  softRunHours: async (credentials, body, threshold) => { // where threshold is the integer to trigger a time count
+
+    let rawData = await api.getProcessedData(credentials, body);
+    // console.log(rawData.data[body.tags[0]]);
+    let dataValues = api.extractValues(rawData.data[body.tags[0]])
+    console.log(dataValues);
+    // Sum of array
+    var sum = 0;
+    var increment = convertTimeStringToHours(body.aggregateInterval);
+
+    // Iterate through the array and add each element to the sum
+    for (var i = 0; i < dataValues.length; i++) {
+      if(dataValues[i] > threshold) {
+      sum ++;
+    }
+  }
+   // console.log(body.aggregateInterval);
+    var multiplier = convertTimeStringToHours(body.aggregateInterval)
+     console.log(sum, multiplier)
+
+     let runHours = (sum * multiplier).toFixed(2);
+
+    return runHours;
+  },
+
 
 
 
