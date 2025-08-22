@@ -379,6 +379,59 @@ const api = {
     return runHours;
   },
 
+  /**
+   * totalPeak: fuzzy totaliser
+   * Returns the highest numeric value seen in the raw samples for the requested tag(s)
+   * over the specified window, without needing to know reset times.
+   *
+   * @param {object} credentials - { baseURL, username, password } (userToken must already be set)
+   * @param {object} body - { tags: [string], startTime, endTime, maxSize }
+   * @returns {number|null} - highest value found, or null if none
+   */
+  totalPeak: async (credentials, body) => {
+    body = body !== undefined ? body : { blank: "value" };
+
+    const tags = body.tags !== undefined ? body.tags : _tags;
+    if (!tags || tags.length === 0) {
+      // Call browseTags first or pass body.tags
+      return null;
+    }
+
+    const baseURL = credentials.baseURL;
+    const startTime = body.startTime !== undefined ? body.startTime : "Now - 24 Hours";
+    const endTime   = body.endTime   !== undefined ? body.endTime   : "Now";
+    const maxSize   = body.maxSize   !== undefined ? body.maxSize   : 100000;
+
+    let continuation = null;
+    let peak = -Infinity;
+
+    do {
+      const payload = {
+        userToken: _userToken,
+        tags,
+        startTime,
+        endTime,
+        maxSize,
+        continuation
+      };
+
+      const data = await makeRequest(baseURL + "/getTagData2", "POST", payload);
+      // Prefer the first tag (mirrors softTotalizer/softRunHours pattern)
+      if (data && data.data && data.data[tags[0]]) {
+        const arr = data.data[tags[0]];
+        for (let i = 0; i < arr.length; i++) {
+          const v = Number(arr[i]?.v);
+          if (Number.isFinite(v) && v >= peak) {
+            peak = v;
+          }
+        }
+      }
+
+      continuation = data?.continuation ?? null;
+    } while (continuation !== null);
+
+    return peak === -Infinity ? null : peak;
+  },
 
 
 
