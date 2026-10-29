@@ -67,7 +67,66 @@ function sanitizeError(error) {
   return safe;
 }
 
+// TAG NAME MAPPING
+// credentials.tagPrefixMap translates between the caller's tag names and the server's,
+// e.g. { "GREENCREATE.Wijster.": "GCWJ.GCWJ.Wijster." }. Prefixes match case-insensitively.
+// Requests use the server's names; tag names in responses are turned back into the caller's.
+
+function prefixEntries(map) {
+  if (!map) return [];
+  return (Array.isArray(map) ? map : Object.entries(map)).filter(([from, to]) => from && to);
+}
+
+function replacePrefix(tag, from, to) {
+  if (typeof tag !== "string" || !tag.toLowerCase().startsWith(from.toLowerCase())) return null;
+  return to + tag.slice(from.length);
+}
+
+function toServerTags(tags, entries, back) {
+  return tags.map((tag) => {
+    for (const [from, to] of entries) {
+      const mapped = replacePrefix(tag, from, to);
+      if (mapped !== null) {
+        back[mapped] = tag;
+        return mapped;
+      }
+    }
+    return tag;
+  });
+}
+
+function toCallerTag(tag, entries, back) {
+  if (back[tag] !== undefined) return back[tag];
+  for (const [from, to] of entries) {
+    const mapped = replacePrefix(tag, to, from);
+    if (mapped !== null) return mapped;
+  }
+  return tag;
+}
+
+function mapResponseTags(result, entries, back) {
+  if (!result || typeof result !== "object") return;
+  for (const key of ["data", "properties"]) {
+    const byTag = result[key];
+    if (byTag && typeof byTag === "object" && !Array.isArray(byTag)) {
+      const renamed = {};
+      for (const tag of Object.keys(byTag)) renamed[toCallerTag(tag, entries, back)] = byTag[tag];
+      result[key] = renamed;
+    }
+  }
+  if (Array.isArray(result.tags)) {
+    result.tags = result.tags.map((tag) => toCallerTag(tag, entries, back));
+  }
+}
+
 const makeRequest = async (credentials, endpoint, data) => {
+  const entries = prefixEntries(credentials.tagPrefixMap);
+  const back = {};
+  if (entries.length && data && Array.isArray(data.tags)) {
+    data = { ...data, tags: toServerTags(data.tags, entries, back) };
+  }
+
+  let result;
   try {
     const response = await axios({
       url: buildURL(credentials.baseURL, endpoint),
@@ -79,11 +138,24 @@ const makeRequest = async (credentials, endpoint, data) => {
       httpsAgent: getAgent(credentials),
       timeout: credentials.timeout || 0,
     });
-    return response.data;
+    result = response.data;
   } catch (error) {
     console.error("Error:", error.message);
     throw sanitizeError(error);
   }
+
+  if (entries.length) mapResponseTags(result, entries, back);
+
+  // Canary reports problems such as unknown tags inside a successful HTTP response.
+  // Without strict mode those come back as empty data, which callers can mistake for zeros.
+  if (credentials.strict && result && result.statusCode && result.statusCode !== "Good") {
+    const errors = Array.isArray(result.errors) ? result.errors : [];
+    const error = new CanaryError(`${endpoint} returned ${result.statusCode}: ${errors.join("; ") || "no details"}`);
+    error.statusCode = result.statusCode;
+    error.errors = errors;
+    throw error;
+  }
+  return result;
 };
 
 // AUTHENTICATION
@@ -108,12 +180,20 @@ function createClient() {
     userToken: null,
     tags: [],
     liveDataToken: null,
+    timeZone: null,
   };
 
   const auth = (credentials) => {
     const token = getApiToken(credentials);
     if (token) return { [credentials.tokenParam || "apiToken"]: token };
     return { userToken: session.userToken };
+  };
+
+  // A Canary user token carries the time zone given at login. API tokens have no session,
+  // so the zone from getUserToken() (or credentials.timeZone) is sent with each data request.
+  const timeZoneFor = (credentials) => {
+    const timeZone = credentials.timeZone || (getApiToken(credentials) ? session.timeZone : null);
+    return timeZone ? { timeZone } : {};
   };
 
   const resolveTags = (body) => (body.tags !== undefined ? body.tags : session.tags);
@@ -149,7 +229,10 @@ function createClient() {
     getUserToken: async (credentials, body) => {
       body = body !== undefined ? body : {};
       if (getApiToken(credentials)) {
-        // API tokens need no session. Stay callable so existing scripts work unchanged.
+        // API tokens need no login. Keep the time zone a session would have had,
+        // and stay callable so existing scripts work unchanged.
+        session.timeZone =
+          body.timezone !== undefined ? body.timezone : "GMT Standard Time";
         return { statusCode: "Good", userToken: null, authMode: "apiToken" };
       }
       const data = await makeRequest(credentials, "getUserToken", {
@@ -185,6 +268,7 @@ function createClient() {
 
       const data = await makeRequest(credentials, "getTagData2", {
         ...auth(credentials),
+        ...timeZoneFor(credentials),
         tags,
       });
       return data;
@@ -199,6 +283,7 @@ function createClient() {
 
       return getAllTagData(credentials, {
         ...auth(credentials),
+        ...timeZoneFor(credentials),
         tags,
         startTime:
           body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
@@ -217,6 +302,7 @@ function createClient() {
 
       const data = await getAllTagData(credentials, {
         ...auth(credentials),
+        ...timeZoneFor(credentials),
         tags,
         startTime:
           body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
@@ -424,6 +510,7 @@ function createClient() {
       for (let page = 0; page < MAX_PAGES; page++) {
         const data = await makeRequest(credentials, "getTagData2", {
           ...auth(credentials),
+          ...timeZoneFor(credentials),
           tags,
           startTime,
           endTime,

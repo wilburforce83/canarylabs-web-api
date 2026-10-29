@@ -52,6 +52,28 @@ const credentials = {
 | `rejectUnauthorized` | `false` | Set `true` to verify the server's TLS certificate. Off by default because the Web API port usually serves a self-signed certificate. |
 | `ca` | — | PEM certificate(s) to trust when `rejectUnauthorized` is `true`, e.g. `fs.readFileSync("canary.pem")`. |
 | `timeout` | `0` (none) | Request timeout in milliseconds. |
+| `timeZone` | — | Windows time zone name for interpreting and returning times, e.g. `"GMT Standard Time"`. See *Time zones* below. |
+| `tagPrefixMap` | — | Translate tag-name prefixes between your names and the server's, e.g. `{ "Old.Site.": "New.Site." }`. See *Renamed tags* below. |
+| `strict` | `false` | Throw a `CanaryError` when Canary answers with a `statusCode` other than `"Good"` (for example an unknown tag), instead of returning the response. |
+
+#### Time zones
+
+Canary interprets times without an offset (e.g. `"10-28-2026 06:00:00"`) and returns timestamps in a time zone. With username/password, that is the zone passed to `getUserToken({ timezone })`, which the server ties to the session. API tokens have no session, so in token mode the package remembers the zone passed to `getUserToken()` (default `"GMT Standard Time"`) and sends it as `timeZone` on every data request. Scripts written for username/password therefore behave the same with a token. If `getUserToken()` is never called, the server's own time zone is used. Set `credentials.timeZone` to choose a zone explicitly.
+
+#### Renamed tags
+
+If a server's tag names change (for example after a migration), `tagPrefixMap` lets existing code keep using the old names:
+
+```javascript
+const credentials = {
+  baseURL, apiToken,
+  tagPrefixMap: { "GREENCREATE.Wijster.": "GCWJ.GCWJ.Wijster." },
+};
+const result = await canary.getProcessedData(credentials, { tags: ["GREENCREATE.Wijster.Lagoons.LT-51-0102"] });
+result.data["GREENCREATE.Wijster.Lagoons.LT-51-0102"]; // requested as GCWJ.GCWJ.Wijster.Lagoons.LT-51-0102
+```
+
+Prefixes match case-insensitively, and each tag comes back exactly as you spelled it. `browseTags()` results are mapped back to your prefix too. Combine it with `strict: true` so a tag that does not exist on the server raises an error instead of returning empty data.
 
 #### Errors
 

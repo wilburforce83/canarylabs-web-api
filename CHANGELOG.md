@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.0
+
+### Added
+- `tagPrefixMap` credentials option. It translates tag-name prefixes to the server's names in requests, and back to the caller's names in responses (`data`, `properties` and `browseTags` results). Matching is case-insensitive.
+- `strict` credentials option. A response whose `statusCode` is not `"Good"` (for example an unknown tag, which Canary otherwise answers with empty data) throws a `CanaryError` with `statusCode` and `errors`.
+- `timeZone` credentials option.
+- Token mode keeps the time zone passed to `getUserToken()` (default `"GMT Standard Time"`) and sends it as `timeZone` with data requests, matching how a username/password session behaves.
+
+No change for username/password users unless the new options are set.
+
 ## 1.2.0
 
 ### Added

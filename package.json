@@ -5,7 +5,7 @@
   },
   "name": "canarylabs-web-api",
   "description": "Unofficial NodeJS package for the Canary Axiom Web API",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "main": "index.js",
   "scripts": {
     "test": "node --test --test-timeout=10000 \"test/*.test.js\"",
