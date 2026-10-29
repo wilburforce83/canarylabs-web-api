@@ -4,11 +4,10 @@ const canary = require("./index.js"); // when using from npm use require('canary
 // Basic running example
 
 const credentials = {
-  username: process.env.MY_USERNAME || "default_username",
-  password: process.env.MY_PASSWORD || "default_password",
-  baseURL:
-    process.env.MY_BASE_URL ||
-    "https://yourdomain.canarylabs.online:55236/api/v2",
+  baseURL: process.env.MY_BASE_URL,
+  apiToken: process.env.MY_TOKEN, // used instead of username/password when set
+  username: process.env.MY_USERNAME,
+  password: process.env.MY_PASSWORD,
 };
 
 let userTokenBody = {
@@ -55,6 +54,6 @@ let userTokenBody = {
       console.log("Error in browseTags. Cannot proceed to getLiveDataToken.");
     }
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error:", error.message);
   }
 })();

@@ -7,37 +7,67 @@ Unofficial NodeJS package for the Canary Axiom Web API
 
 ### Usage
 
+The package supports two ways to authenticate with the Canary Web API:
+
+| Method | Credentials | Notes |
+|---|---|---|
+| **API token** (recommended) | `{ baseURL, apiToken }` | Create one in Canary Admin under *Identity > Security > API Tokens*. No login request is needed. |
+| **Username / password** | `{ baseURL, username, password }` | `getUserToken()` logs in and stores a session token. Canary v24+ only supports this with a Windows AD identity provider. |
+
+If both are supplied, the API token is used.
 
 ```javascript
 require("dotenv").config({ path: "./process.env" });
 const canary = require("canarylabs-web-api");
 
-// Basic running example
-
 const credentials = {
-  username: process.env.MY_USERNAME || "default_username",
-  password: process.env.MY_PASSWORD || "default_password",
-  baseURL:
-    process.env.MY_BASE_URL ||
-    "https://yourdomain.canarylabs.online:55236/api/v2",
+  baseURL: process.env.MY_BASE_URL, // e.g. https://yourdomain.canarylabs.online:55236/api/v2
+  apiToken: process.env.MY_TOKEN,   // or leave unset and provide username/password
+  username: process.env.MY_USERNAME,
+  password: process.env.MY_PASSWORD,
 };
-
-let userTokenBody = {
-  application: "Web API",
-  timezone: "Eastern Standard Time",
-};
-
-// Example usage:
 
 (async () => {
   try {
-    let result = await canary.getUserToken(credentials, userTokenBody);
-    console.log("User Token : " + result.userToken);
+    // With an API token this makes no request, so existing scripts keep working unchanged.
+    const login = await canary.getUserToken(credentials, { timezone: "GMT Standard Time" });
+    console.log("Authenticated using:", login.authMode); // "apiToken" or "userToken"
+
+    const browse = await canary.browseTags(credentials);
+    console.log(browse.tags.length, "tags");
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error:", error.message);
   }
 })();
+```
 
+#### Credentials options
+
+| Option | Default | Description |
+|---|---|---|
+| `baseURL` | — | Web API base URL, including `/api/v2`. A trailing slash is fine. |
+| `apiToken` (alias `token`) | — | Canary API token. |
+| `tokenParam` | `"apiToken"` | Request field used for the token. Set `"accessToken"` for Canary v23 servers. |
+| `username`, `password` | — | Used by `getUserToken()` when no API token is set. |
+| `rejectUnauthorized` | `false` | Set `true` to verify the server's TLS certificate. Off by default because the Web API port usually serves a self-signed certificate. |
+| `ca` | — | PEM certificate(s) to trust when `rejectUnauthorized` is `true`, e.g. `fs.readFileSync("canary.pem")`. |
+| `timeout` | `0` (none) | Request timeout in milliseconds. |
+
+#### Errors
+
+Failed requests throw a `CanaryError` with the usual message (e.g. `Request failed with status code 401`), plus `status`, `code` and `response: { status, statusText, data }`. The request body is never attached, so logging the whole error cannot expose your password or API token.
+
+Canary can also report problems inside a successful response, as `statusCode: "Error"` with an `errors` array (for example a failed username/password login). Check `statusCode` where that matters.
+
+#### Separate clients
+
+The default export keeps one shared session (session token, browsed tags, live data token). To use several servers or accounts in one process, give each its own client:
+
+```javascript
+const siteA = canary.createClient();
+const siteB = canary.createClient();
+await siteA.browseTags(credentialsA);
+await siteB.browseTags(credentialsB);
 ```
 
 ### Additional useful functions
@@ -71,16 +101,14 @@ The Canary API returns `null` on any processed data request i.e an average or de
 
 ```javascript
 function processTags(data, tags) {
- console.log(data.data);
   tags.forEach(tag => {
-      if (data.data[tag]) {
-          data.data[tag].forEach(item => {
-            console.log("item",item);
-              if (item.v === null) {
-                  item.v = 0;
-              }
-          });
-      }
+    if (data.data[tag]) {
+      data.data[tag].forEach(item => {
+        if (item.v === null) {
+          item.v = 0;
+        }
+      });
+    }
   });
   return data;
 }
@@ -95,7 +123,6 @@ If your flow sensor does not have a pulsed output totaliser you can use this fun
 
        let totalizer = await canary.softTotalizer(credentials, {
 
-        "userToken": "{{UserToken}}",
         "tags": ["Company.Site.Flow.FT1731_PV"],
         "startTime": "now - 2 hour",
         "endTime": "now",
@@ -121,8 +148,7 @@ let threshold = 1 // where the threshold is the lowest value that the parameter 
 
 let runHours = await canary.softRunHours(credentials, {
 
-          "userToken": "{{UserToken}}",
-          "tags": ["company.site.Flow.FT2900_PV"],
+            "tags": ["company.site.Flow.FT2900_PV"],
           "startTime": "12-01-2023",
           "endTime": "now",
           "maxSize": 10000000,
@@ -132,6 +158,17 @@ let runHours = await canary.softRunHours(credentials, {
         }, threshold);
 
         console.log("response; ", runHours);
+```
+
+#### Paged results
+
+`getRawData`, `getProcessedData` and `totalPeak` follow Canary's `continuation` automatically and return every page, so large windows come back complete.
+
+### Testing
+
+```
+npm test            # offline tests against a local stub server
+npm run test:live   # read-only checks against the server in ./process.env
 ```
 
 ### Documentation of the API

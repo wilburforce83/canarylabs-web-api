@@ -1,15 +1,15 @@
 {
   "dependencies": {
-    "axios": "^0.27.2",
-    "dotenv": "^16.3.1",
-    "https": "^1.0.0"
+    "axios": "^1.20.0",
+    "dotenv": "^16.3.1"
   },
   "name": "canarylabs-web-api",
   "description": "Unofficial NodeJS package for the Canary Axiom Web API",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --test-timeout=10000 \"test/*.test.js\"",
+    "test:live": "node --test --test-timeout=120000 test/live.js"
   },
   "repository": {
     "type": "git",
@@ -28,5 +28,14 @@
   "bugs": {
     "url": "https://github.com/wilburforce83/canarylabs-web-api/issues"
   },
-  "homepage": "https://github.com/wilburforce83/canarylabs-web-api#readme"
+  "homepage": "https://github.com/wilburforce83/canarylabs-web-api#readme",
+  "files": [
+    "index.js",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
 }

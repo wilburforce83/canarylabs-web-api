@@ -1,451 +1,467 @@
+"use strict";
+
 const axios = require("axios");
 const https = require("https");
 
-// Ingoring SSL failures - ONLY USE ON READONLY NON_SENSITIVE DATA
+// TLS verification is OFF by default for backwards compatibility: the Canary Web API
+// port usually serves a self-signed certificate. Opt in per credentials object with
+// `rejectUnauthorized: true`, plus `ca` (PEM) when the server uses a private CA.
 
-const agent = new https.Agent({
+const insecureAgent = new https.Agent({
   rejectUnauthorized: false,
 });
+const verifyingAgents = new Map();
 
-let _userToken = null;
-let _tags = [];
-let _liveDataToken = null;
+function getAgent(credentials) {
+  if (!credentials || credentials.rejectUnauthorized !== true) return insecureAgent;
+  const ca = credentials.ca || undefined;
+  if (!verifyingAgents.has(ca)) {
+    verifyingAgents.set(ca, new https.Agent({ rejectUnauthorized: true, ca }));
+  }
+  return verifyingAgents.get(ca);
+}
 
-const makeRequest = async (url, method, data) => {
+function buildURL(baseURL, endpoint) {
+  return String(baseURL).replace(/\/+$/, "") + "/" + endpoint;
+}
+
+// Guards against servers that keep returning a continuation.
+const MAX_PAGES = 10000;
+
+// ERRORS
+// Errors are rebuilt without the axios request config, which holds the request body
+// (password / API token). Callers that log the whole error object stay safe.
+
+const SECRET_KEYS = ["password", "apiToken", "accessToken", "userToken", "liveDataToken"];
+
+class CanaryError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CanaryError";
+  }
+}
+
+function redact(value) {
+  if (Array.isArray(value)) return value.map(redact);
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value)) {
+      out[key] = SECRET_KEYS.includes(key) ? "[REDACTED]" : redact(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function sanitizeError(error) {
+  const safe = new CanaryError(error.message);
+  if (error.code) safe.code = error.code;
+  if (error.response) {
+    safe.status = error.response.status;
+    safe.response = {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      data: redact(error.response.data),
+    };
+  }
+  return safe;
+}
+
+const makeRequest = async (credentials, endpoint, data) => {
   try {
     const response = await axios({
-      url,
-      method,
+      url: buildURL(credentials.baseURL, endpoint),
+      method: "POST",
       data: JSON.stringify(data),
       headers: {
         "Content-Type": "application/json",
       },
-      httpsAgent: agent,
+      httpsAgent: getAgent(credentials),
+      timeout: credentials.timeout || 0,
     });
     return response.data;
   } catch (error) {
     console.error("Error:", error.message);
-    throw error;
+    throw sanitizeError(error);
   }
 };
 
+// AUTHENTICATION
+// Two methods are supported:
+//   - API token: credentials.apiToken (or credentials.token). Sent on every request;
+//     no getUserToken round-trip is needed. Takes precedence when present.
+//   - Username/password: getUserToken() logs in and stores a session userToken.
+
+function getApiToken(credentials) {
+  return (credentials && (credentials.apiToken || credentials.token)) || null;
+}
+
+function getAuthMode(credentials) {
+  return getApiToken(credentials) ? "apiToken" : "userToken";
+}
+
 // API functions
 
-const api = {
-  getTimeZones: async (credentials) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/getTimeZones",
-      "POST"
-    );
-    //console.log('getTimeZones', data);
-    return data;
-  },
+function createClient() {
+  // Per-client state. The default export is one shared client, as in 1.x.
+  const session = {
+    userToken: null,
+    tags: [],
+    liveDataToken: null,
+  };
 
-  getUserToken: async (credentials, body) => {
-    body = body !== undefined ? body : { blank: "value" };
-    const data = await makeRequest(
-      credentials.baseURL + "/getUserToken",
-      "POST",
-      {
+  const auth = (credentials) => {
+    const token = getApiToken(credentials);
+    if (token) return { [credentials.tokenParam || "apiToken"]: token };
+    return { userToken: session.userToken };
+  };
+
+  const resolveTags = (body) => (body.tags !== undefined ? body.tags : session.tags);
+
+  // Requests getTagData2 and follows continuations, merging every page into the first.
+  const getAllTagData = async (credentials, payload) => {
+    let result = null;
+    let continuation = payload.continuation;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const data = await makeRequest(credentials, "getTagData2", { ...payload, continuation });
+      if (result === null) {
+        result = data;
+      } else if (data && data.data) {
+        result.data = result.data || {};
+        for (const tag of Object.keys(data.data)) {
+          result.data[tag] = (result.data[tag] || []).concat(data.data[tag]);
+        }
+      }
+      const next = data && data.continuation !== undefined ? data.continuation : null;
+      if (next === null || JSON.stringify(next) === JSON.stringify(continuation)) break;
+      continuation = next;
+    }
+    if (result && typeof result === "object") result.continuation = null;
+    return result;
+  };
+
+  const api = {
+    getTimeZones: async (credentials) => {
+      const data = await makeRequest(credentials, "getTimeZones");
+      return data;
+    },
+
+    getUserToken: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      if (getApiToken(credentials)) {
+        // API tokens need no session. Stay callable so existing scripts work unchanged.
+        return { statusCode: "Good", userToken: null, authMode: "apiToken" };
+      }
+      const data = await makeRequest(credentials, "getUserToken", {
         application:
           body.application !== undefined ? body.application : "Web API",
         timeZone:
           body.timezone !== undefined ? body.timezone : "GMT Standard Time",
         username: credentials.username,
         password: credentials.password,
-      }
-    );
-    //console.log('getUserToken', data);
-    _userToken = data.userToken;
-    return data;
-  },
+      });
+      session.userToken = data.userToken;
+      return { ...data, authMode: "userToken" };
+    },
 
-  browseTags: async (credentials, body, continuation) => {
-    body = body !== undefined ? body : { blank: "value" };
-    //console.log(body);
-    const data = await makeRequest(
-      credentials.baseURL + "/browseTags",
-      "POST",
-      {
-        userToken: _userToken,
+    browseTags: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      const data = await makeRequest(credentials, "browseTags", {
+        ...auth(credentials),
         deep: body.deep !== undefined ? body.deep : true,
         path: body.path !== undefined ? body.path : "",
+      });
+      session.tags = (data && data.tags) || [];
+      return data;
+    },
+
+    getCurrentValues: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      const tags = resolveTags(body);
+      if (!tags || tags.length === 0) {
+        // Call browseTags first or pass body.tags
+        return;
       }
-    );
-    //console.log('browseTags', data);
-    _tags = data.tags;
-    return data;
-  },
 
-  getCurrentValues: async (credentials, body) => {
-    body = body !== undefined ? body : { blank: "value" };
-    if (_tags.length === 0) {
-      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
-      return;
-    }
+      const data = await makeRequest(credentials, "getTagData2", {
+        ...auth(credentials),
+        tags,
+      });
+      return data;
+    },
 
-    const data = await makeRequest(
-      credentials.baseURL + "/getTagData2",
-      "POST",
-      {
-        userToken: _userToken,
-        tags: body.tags !== undefined ? body.tags : _tags,
+    getRawData: async (credentials, body, continuation) => {
+      body = body !== undefined ? body : {};
+      const tags = resolveTags(body);
+      if (!tags || tags.length === 0) {
+        return;
       }
-    );
-    //console.log('getCurrentValues', data);
-    return data;
-  },
 
-  getRawData: async (credentials, body, continuation) => {
-    body = body !== undefined ? body : { blank: "value" };
-    if (_tags.length === 0) {
-      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
-      return;
-    }
+      return getAllTagData(credentials, {
+        ...auth(credentials),
+        tags,
+        startTime:
+          body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
+        endTime: body.endTime !== undefined ? body.endTime : "Now",
+        maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
+        continuation: continuation !== undefined ? continuation : null,
+      });
+    },
 
-    try {
-      const data = await makeRequest(
-        credentials.baseURL + "/getTagData2",
-        "POST",
-        {
-          userToken: _userToken,
-          tags: body.tags !== undefined ? body.tags : _tags,
-          startTime:
-            body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
-          endTime: body.endTime !== undefined ? body.endTime : "Now",
-          maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
-          continuation: continuation !== undefined ? continuation : null,
-        }
-      );
-      //console.log('getRawData', data);
+    getProcessedData: async (credentials, body, continuation) => {
+      body = body !== undefined ? body : {};
+      const tags = resolveTags(body);
+      if (!tags || tags.length === 0) {
+        return;
+      }
 
-      if (data.continuation !== null) {
-        //console.log('CONTINUATION: getRawData', data.continuation);
-        // do an array push maybe? need to understand how this works
-        await api.getRawData(credentials, data.continuation);
-      } else {
-        //console.log('FINISHED: getRawData');
+      const data = await getAllTagData(credentials, {
+        ...auth(credentials),
+        tags,
+        startTime:
+          body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
+        endTime: body.endTime !== undefined ? body.endTime : "Now",
+        aggregateName:
+          body.aggregateName !== undefined
+            ? body.aggregateName
+            : "TimeAverage2",
+        aggregateInterval:
+          body.aggregateInterval !== undefined
+            ? body.aggregateInterval
+            : "1 Hour",
+        maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
+        continuation: continuation !== undefined ? continuation : null,
+      });
+
+      if (data && data.data) processTags(data, tags);
+      return data;
+    },
+
+    revokeUserToken: async (credentials) => {
+      if (getApiToken(credentials)) {
+        // API tokens are managed in Canary Identity, not revoked through the Read API.
+        return { statusCode: "Good" };
+      }
+      const data = await makeRequest(credentials, "revokeUserToken", {
+        userToken: session.userToken,
+      });
+      session.userToken = null;
+      return data;
+    },
+
+    browseNodes: async (credentials, path) => {
+      const data = await makeRequest(credentials, "browseNodes", {
+        ...auth(credentials),
+        path: path !== undefined ? path : "",
+      });
+
+      const nodes = data.nodes;
+      const keys = Object.keys(nodes);
+      if (keys.length > 0) {
+        const node = nodes[keys[0]];
+        if (node.hasNodes) await api.browseNodes(credentials, node.fullPath);
         return data;
       }
-    } catch (error) {
-      //console.log('error', error);
-    }
-  },
-
-  getProcessedData: async (credentials, body, continuation) => {
-    body = body !== undefined ? body : { blank: "value" };
-    if (_tags.length === 0) {
-      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
-      return;
-    }
-
-    try {
-      const data = await makeRequest(
-        credentials.baseURL + "/getTagData2",
-        "POST",
-        {
-          userToken: _userToken,
-          tags: body.tags !== undefined ? body.tags : _tags,
-          startTime:
-            body.startTime !== undefined ? body.startTime : "Now - 24 Hours",
-          endTime: body.endTime !== undefined ? body.endTime : "Now",
-          aggregateName:
-            body.aggregateName !== undefined
-              ? body.aggregateName
-              : "TimeAverage2",
-          aggregateInterval:
-            body.aggregateInterval !== undefined
-              ? body.aggregateInterval
-              : "1 Hour",
-          maxSize: body.maxSize !== undefined ? body.maxSize : 100000,
-          continuation: continuation !== undefined ? continuation : null,
-        }
-      );
-      //console.log('getProcessedData', data);
-
-      if (data.continuation !== null) {
-        //console.log('CONTINUATION: getProcessedData', data.continuation);
-        await api.getProcessedData(credentials, data.continuation);
-      } else {
-        //console.log('FINISHED: getProcessedData');
-        if (data.data)
-
-          var FixedData = processTags(data, body.tags);
-        // console.group("processed tags");
-        return FixedData;
-      }
-    } catch (error) {
-      //console.log('error', error);
-    }
-  },
-
-  revokeUserToken: async (credentials) => {
-    body = body !== undefined ? body : { blank: "value" };
-    const data = await makeRequest(
-      credentials.baseURL + "/revokeUserToken",
-      "POST",
-      {
-        userToken: _userToken,
-      }
-    );
-    //console.log('revokeUserToken', data);
-    _userToken = null;
-    return data;
-  },
-
-  browseNodes: async (credentials, path) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/browseNodes",
-      "POST",
-      {
-        userToken: _userToken,
-        path: path !== undefined ? path : "",
-      }
-    );
-    //console.log('browseNodes', data);
-
-    const nodes = data.nodes;
-    const keys = Object.keys(nodes);
-    if (keys.length > 0) {
-      const node = nodes[keys[0]];
-      if (node.hasNodes) await api.browseNodes(credentials, node.fullPath);
       return data;
-    }
-    return data;
-  },
+    },
 
-  getAggregates: async (credentials) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/getAggregates",
-      "POST",
-      {
-        userToken: _userToken,
-      }
-    );
-    //console.log('getAggregates', data);
-    return data;
-  },
+    getAggregates: async (credentials) => {
+      const data = await makeRequest(credentials, "getAggregates", {
+        ...auth(credentials),
+      });
+      return data;
+    },
 
-  getQualities: async (credentials, qualities) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/getQualities",
-      "POST",
-      {
-        userToken: _userToken,
+    getQualities: async (credentials, qualities) => {
+      const data = await makeRequest(credentials, "getQualities", {
+        ...auth(credentials),
         qualities: qualities !== undefined ? qualities : [192, "193", 32768],
+      });
+      return data;
+    },
+
+    getTagProperties: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      const data = await makeRequest(credentials, "getTagProperties", {
+        ...auth(credentials),
+        tags: resolveTags(body),
+      });
+      return data;
+    },
+
+    getLiveDataToken: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      const tags = resolveTags(body);
+      if (!tags || tags.length === 0) {
+        return;
       }
-    );
-    //console.log('getQualities', data);
-    return data;
-  },
 
-  getTagProperties: async (credentials, body) => {
-    body = body !== undefined ? body : { blank: "value" };
-    const data = await makeRequest(
-      credentials.baseURL + "/getTagProperties",
-      "POST",
-      {
-        userToken: _userToken,
-        tags: body.tags !== undefined ? body.tags : _tags,
-      }
-    );
-    //console.log('getTagProperties', data);
-    return data;
-  },
-
-  getLiveDataToken: async (credentials, body) => {
-    body = body !== undefined ? body : { blank: "value" };
-    if (_tags.length === 0) {
-      //console.log('Call "BrowseTags" first to build an array of tags used to get data.');
-      return;
-    }
-
-    const data = await makeRequest(
-      credentials.baseURL + "/getLiveDataToken",
-      "POST",
-      {
-        userToken: _userToken,
-        tags: body.tags !== undefined ? body.tags : _tags,
+      const data = await makeRequest(credentials, "getLiveDataToken", {
+        ...auth(credentials),
+        tags,
         mode: body.mode !== undefined ? body.mode : "AllValues",
         includeQuality: true,
-      }
-    );
-    //console.log('getLiveDataToken', data);
-    _liveDataToken = data.liveDataToken;
-    return data;
-  },
+      });
+      session.liveDataToken = data.liveDataToken;
+      return data;
+    },
 
-  getLiveData: async (credentials, continuation) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/getLiveData",
-      "POST",
-      {
-        userToken: _userToken,
-        liveDataToken: _liveDataToken,
+    getLiveData: async (credentials, continuation) => {
+      const data = await makeRequest(credentials, "getLiveData", {
+        ...auth(credentials),
+        liveDataToken: session.liveDataToken,
         continuation: continuation !== undefined ? continuation : null,
-      }
-    );
-    //console.log('getLiveData', data);
-    return data;
-  },
+      });
+      return data;
+    },
 
-  revokeLiveDataToken: async (credentials) => {
-    const data = await makeRequest(
-      credentials.baseURL + "/revokeLiveDataToken",
-      "POST",
-      {
-        userToken: _userToken,
-        liveDataToken: _liveDataToken,
-      }
-    );
-    //console.log('revokeLiveDataToken', data);
-    _liveDataToken = null;
-    return data;
-  },
+    revokeLiveDataToken: async (credentials) => {
+      const data = await makeRequest(credentials, "revokeLiveDataToken", {
+        ...auth(credentials),
+        liveDataToken: session.liveDataToken,
+      });
+      session.liveDataToken = null;
+      return data;
+    },
 
-  storeLatestValues: async (credentials) => {
-    let liveValues = await api.getCurrentValues(credentials);
+    storeLatestValues: async (credentials) => {
+      let liveValues = await api.getCurrentValues(credentials);
 
-    // Define an object to store the variables
-    let result = {};
+      // Define an object to store the variables
+      let result = {};
+      if (!liveValues || !liveValues.data) return result;
 
-    // Iterate through each key in liveValues.data
-    for (let key in liveValues.data) {
-      if (liveValues.data.hasOwnProperty(key) && liveValues.data[key][0]) {
-        // Allocate automatic variables with the key name
-        result[key] = liveValues.data[key][0].v;
-      }
-    }
-
-    return result;
-  },
-
-  extractValues: (data) => {
-    // Check if the input data is an array
-    if (!Array.isArray(data)) {
-      throw new Error("Input data must be an array");
-    }
-
-    // Use the map function to create a new array with only the "v" values
-    const valuesArray = data.map((item) => item.v);
-
-    return valuesArray;
-  },
-
-  softTotalizer: async (credentials, body, continuation) => {
-
-    let rawData = await api.getProcessedData(credentials, body);
-    // console.log(rawData.data[body.tags[0]]);
-    let dataValues = api.extractValues(rawData.data[body.tags[0]])
-    // console.log(dataValues);
-    // Sum of array
-    var sum = 0;
-
-    // Iterate through the array and add each element to the sum
-    for (var i = 0; i < dataValues.length; i++) {
-      sum += dataValues[i];
-    }
-   // console.log(body.aggregateInterval);
-    var multiplier = convertTimeStringToHours(body.aggregateInterval)
-    // console.log(sum, multiplier)
-
-    let totaliser = Math.floor(sum * multiplier);
-
-    return totaliser;
-  },
-
-  softRunHours: async (credentials, body, threshold) => { // where threshold is the integer to trigger a time count
-
-    let rawData = await api.getProcessedData(credentials, body);
-    // console.log(rawData.data[body.tags[0]]);
-    let dataValues = api.extractValues(rawData.data[body.tags[0]])
-    console.log(dataValues);
-    // Sum of array
-    var sum = 0;
-    var increment = convertTimeStringToHours(body.aggregateInterval);
-
-    // Iterate through the array and add each element to the sum
-    for (var i = 0; i < dataValues.length; i++) {
-      if(dataValues[i] > threshold) {
-      sum ++;
-    }
-  }
-   // console.log(body.aggregateInterval);
-    var multiplier = convertTimeStringToHours(body.aggregateInterval)
-     console.log(sum, multiplier)
-
-     let runHours = (sum * multiplier).toFixed(2);
-
-    return runHours;
-  },
-
-  /**
-   * totalPeak: fuzzy totaliser
-   * Returns the highest numeric value seen in the raw samples for the requested tag(s)
-   * over the specified window, without needing to know reset times.
-   *
-   * @param {object} credentials - { baseURL, username, password } (userToken must already be set)
-   * @param {object} body - { tags: [string], startTime, endTime, maxSize }
-   * @returns {number|null} - highest value found, or null if none
-   */
-  totalPeak: async (credentials, body) => {
-    body = body !== undefined ? body : { blank: "value" };
-
-    const tags = body.tags !== undefined ? body.tags : _tags;
-    if (!tags || tags.length === 0) {
-      // Call browseTags first or pass body.tags
-      return null;
-    }
-
-    const baseURL = credentials.baseURL;
-    const startTime = body.startTime !== undefined ? body.startTime : "Now - 24 Hours";
-    const endTime   = body.endTime   !== undefined ? body.endTime   : "Now";
-    const maxSize   = body.maxSize   !== undefined ? body.maxSize   : 100000;
-
-    let continuation = null;
-    let peak = -Infinity;
-
-    do {
-      const payload = {
-        userToken: _userToken,
-        tags,
-        startTime,
-        endTime,
-        maxSize,
-        continuation
-      };
-
-      const data = await makeRequest(baseURL + "/getTagData2", "POST", payload);
-      // Prefer the first tag (mirrors softTotalizer/softRunHours pattern)
-      if (data && data.data && data.data[tags[0]]) {
-        const arr = data.data[tags[0]];
-        for (let i = 0; i < arr.length; i++) {
-          const v = Number(arr[i]?.v);
-          if (Number.isFinite(v) && v >= peak) {
-            peak = v;
-          }
+      // Iterate through each key in liveValues.data
+      for (let key in liveValues.data) {
+        if (Object.prototype.hasOwnProperty.call(liveValues.data, key) && liveValues.data[key][0]) {
+          // Allocate automatic variables with the key name
+          result[key] = liveValues.data[key][0].v;
         }
       }
 
-      continuation = data?.continuation ?? null;
-    } while (continuation !== null);
+      return result;
+    },
 
-    return peak === -Infinity ? null : peak;
-  },
+    extractValues: (data) => {
+      // Check if the input data is an array
+      if (!Array.isArray(data)) {
+        throw new Error("Input data must be an array");
+      }
 
+      // Use the map function to create a new array with only the "v" values
+      const valuesArray = data.map((item) => item.v);
 
+      return valuesArray;
+    },
 
-};
+    softTotalizer: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+      const aggregateInterval =
+        body.aggregateInterval !== undefined ? body.aggregateInterval : "1 Hour";
+
+      let rawData = await api.getProcessedData(credentials, { ...body, aggregateInterval });
+      let dataValues = api.extractValues(rawData.data[resolveTags(body)[0]]);
+
+      // Sum of array
+      var sum = 0;
+      for (var i = 0; i < dataValues.length; i++) {
+        sum += dataValues[i];
+      }
+
+      var multiplier = convertTimeStringToHours(aggregateInterval);
+      let totaliser = Math.floor(sum * multiplier);
+
+      return totaliser;
+    },
+
+    softRunHours: async (credentials, body, threshold) => { // where threshold is the integer to trigger a time count
+      body = body !== undefined ? body : {};
+      const aggregateInterval =
+        body.aggregateInterval !== undefined ? body.aggregateInterval : "1 Hour";
+
+      let rawData = await api.getProcessedData(credentials, { ...body, aggregateInterval });
+      let dataValues = api.extractValues(rawData.data[resolveTags(body)[0]]);
+
+      // Count the samples above the threshold
+      var sum = 0;
+      for (var i = 0; i < dataValues.length; i++) {
+        if (dataValues[i] > threshold) {
+          sum++;
+        }
+      }
+
+      var multiplier = convertTimeStringToHours(aggregateInterval);
+      let runHours = (sum * multiplier).toFixed(2);
+
+      return runHours;
+    },
+
+    /**
+     * totalPeak: fuzzy totaliser
+     * Returns the highest numeric value seen in the raw samples for the requested tag(s)
+     * over the specified window, without needing to know reset times.
+     *
+     * @param {object} credentials - { baseURL, apiToken } or { baseURL, username, password }
+     * @param {object} body - { tags: [string], startTime, endTime, maxSize }
+     * @returns {number|null} - highest value found, or null if none
+     */
+    totalPeak: async (credentials, body) => {
+      body = body !== undefined ? body : {};
+
+      const tags = resolveTags(body);
+      if (!tags || tags.length === 0) {
+        // Call browseTags first or pass body.tags
+        return null;
+      }
+
+      const startTime = body.startTime !== undefined ? body.startTime : "Now - 24 Hours";
+      const endTime   = body.endTime   !== undefined ? body.endTime   : "Now";
+      const maxSize   = body.maxSize   !== undefined ? body.maxSize   : 100000;
+
+      let continuation = null;
+      let peak = -Infinity;
+
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const data = await makeRequest(credentials, "getTagData2", {
+          ...auth(credentials),
+          tags,
+          startTime,
+          endTime,
+          maxSize,
+          continuation,
+        });
+        // Prefer the first tag (mirrors softTotalizer/softRunHours pattern)
+        if (data && data.data && data.data[tags[0]]) {
+          const arr = data.data[tags[0]];
+          for (let i = 0; i < arr.length; i++) {
+            const v = Number(arr[i]?.v);
+            if (Number.isFinite(v) && v >= peak) {
+              peak = v;
+            }
+          }
+        }
+
+        const next = data?.continuation ?? null;
+        if (next === null || JSON.stringify(next) === JSON.stringify(continuation)) break;
+        continuation = next;
+      }
+
+      return peak === -Infinity ? null : peak;
+    },
+
+    getAuthMode,
+  };
+
+  return api;
+}
 
 
 // HELPER FUNCTIONS
 
 function processTags(data, tags) {
- // console.log(data.data);
   tags.forEach(tag => {
     if (data.data[tag]) {
       data.data[tag].forEach(item => {
-       // console.log("item", item);
         if (item.v === null) {
           item.v = 0;
         }
@@ -460,7 +476,7 @@ function convertTimeStringToHours(inputString) {
   const regex = /^(\d+)\s+(\w+)$/;
 
   // Use regex to match the input string
-  const match = inputString.match(regex);
+  const match = String(inputString).match(regex);
 
   if (!match) {
     // If the input string does not match the expected format
@@ -499,9 +515,8 @@ function convertTimeStringToHours(inputString) {
 }
 
 
-
-
-
-
+const api = createClient();
+api.createClient = createClient;
+api.CanaryError = CanaryError;
 
 module.exports = api;

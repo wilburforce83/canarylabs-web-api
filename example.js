@@ -1,14 +1,14 @@
 require("dotenv").config({ path: "./process.env" });
 const canary = require("./index.js"); // when using from npm use require('canarylabs-web-api')
 
-// Basic running example
+// Basic running example. Set MY_TOKEN to use an API token, or MY_USERNAME and
+// MY_PASSWORD to log in. When both are set, the API token is used.
 
 const credentials = {
-  username: process.env.MY_USERNAME || "default_username",
-  password: process.env.MY_PASSWORD || "default_password",
-  baseURL:
-    process.env.MY_BASE_URL ||
-    "https://yourdomain.canarylabs.online:55236/api/v2",
+  baseURL: process.env.MY_BASE_URL,
+  apiToken: process.env.MY_TOKEN,
+  username: process.env.MY_USERNAME,
+  password: process.env.MY_PASSWORD,
 };
 
 let userTokenBody = {
@@ -20,29 +20,19 @@ let userTokenBody = {
 
 (async () => {
   try {
+    // With an API token this makes no request; it is safe to keep calling it.
     let result = await canary.getUserToken(credentials, userTokenBody);
-    console.log("getusertoken", result);
+    console.log("Authenticated using:", result.authMode);
 
-    // Make sure browseTags returns a promise
     let browseTagsResult = await canary.browseTags(credentials);
-    console.log("Browse tags", browseTagsResult);
-    // Check if browseTags was successful before calling getLiveDataToken
-    if (browseTagsResult) {
-      let liveDataResult = await canary.getLiveDataToken(credentials);
-      console.log("Live Data Result", liveDataResult);
-      if (liveDataResult) {
-        let liveValues = await canary.getCurrentValues(credentials, {
-          tags: ["Company.Site.Flow.FT1200_PV"],
-        });
-        const dataArray = liveValues.data["Company.Site.Flow.FT1200_PV"];
-        const firstObject = dataArray[0].v;
+    console.log("Browse tags:", browseTagsResult.tags.length, "tags");
 
-        console.log('Flow Mater 1200:',firstObject);
-      }
-    } else {
-      console.log("Error in browseTags. Cannot proceed to getLiveDataToken.");
-    }
+    let liveValues = await canary.getCurrentValues(credentials, {
+      tags: ["Company.Site.Flow.FT1200_PV"],
+    });
+    const dataArray = liveValues.data["Company.Site.Flow.FT1200_PV"];
+    console.log("Flow Meter 1200:", dataArray[0].v);
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error:", error.message);
   }
 })();

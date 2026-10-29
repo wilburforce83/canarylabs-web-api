@@ -5,11 +5,10 @@ const canary = require("./index.js"); // when using from npm use: require("canar
 // Basic running example
 
 const credentials = {
-  username: process.env.API_USERNAME || "default_username",
-  password: process.env.API_PASSWORD || "default_password",
-  baseURL:
-    process.env.MY_BASE_URL ||
-    "https://greencreate.canarylabs.online:55236/api/v2",
+  baseURL: process.env.MY_BASE_URL,
+  apiToken: process.env.MY_TOKEN, // used instead of username/password when set
+  username: process.env.MY_USERNAME,
+  password: process.env.MY_PASSWORD,
 };
 
 const userTokenBody = {
